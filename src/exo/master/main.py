@@ -93,6 +93,25 @@ class Master:
         self._pending_traces: dict[TaskId, dict[int, list[TraceEventData]]] = {}
         self._expected_ranks: dict[TaskId, set[int]] = {}
 
+        # RavenX fix: compact event log on startup if it has grown too large.
+        # A stale log with 800k+ events from previous sessions causes Nack storms
+        # when new followers join and need to replay from index 0.
+        _COMPACT_THRESHOLD = 10_000
+        _COMPACT_KEEP = 1_000
+        if len(self._event_log) > _COMPACT_THRESHOLD:
+            logger.info(
+                f"Compacting event log: {len(self._event_log)} events → keeping last {_COMPACT_KEEP}"
+            )
+            recent = list(self._event_log.read_range(
+                len(self._event_log) - _COMPACT_KEEP,
+                len(self._event_log),
+            ))
+            self._event_log.close()
+            self._event_log = DiskEventLog(EXO_EVENT_LOG_DIR / "master")
+            for event in recent:
+                self._event_log.append(event)
+            logger.info(f"Event log compacted to {len(self._event_log)} events")
+
     async def run(self):
         logger.info("Starting Master")
 
@@ -345,9 +364,17 @@ class Master:
                                 )
 
                         case RequestEventLog():
-                            # We should just be able to send everything, since other buffers will ignore old messages
-                            # rate limit to 1000 at a time
-                            end = min(command.since_idx + 1000, len(self._event_log))
+                            # RavenX fix: adaptive batch size to eliminate Nack storm on follower join.
+                            # When a new follower joins after a long-running master, the event log can
+                            # have 800k+ events. At 1000/batch this causes a 40-minute sync delay.
+                            # Fix: use large batches (25k) during catch-up, small (1000) near head.
+                            gap = len(self._event_log) - command.since_idx
+                            batch_size = 25000 if gap > 5000 else 1000
+                            end = min(command.since_idx + batch_size, len(self._event_log))
+                            logger.debug(
+                                f"EventLog request: since={command.since_idx} gap={gap} "
+                                f"batch={batch_size} sending [{command.since_idx}:{end}]"
+                            )
                             for i, event in enumerate(
                                 self._event_log.read_range(command.since_idx, end),
                                 start=command.since_idx,

@@ -93,14 +93,32 @@ class EventRouter:
                 await self.external_outbound.send(f_ev)
                 self.out_for_delivery[event.event_id] = (anyio.current_time(), f_ev)
 
+    # RavenX: how many events behind the head we allow on fast-forward
+    _CATCHUP_WINDOW: int = 100
+
     async def _run_ext_in(self):
         buf = OrderedBuffer[Event]()
+        _fast_forwarded: bool = False
         with self.external_inbound as events:
             async for event in events:
                 if event.session != self.session_id:
                     continue
                 if event.origin != self.session_id.master_node_id:
                     continue
+
+                # RavenX fix: when a fresh follower receives its first event and the
+                # master is already far ahead, skip directly to near-current state
+                # instead of replaying the entire event log from index 0.
+                # Without this, the follower requests events 0,1,2,...800k one batch
+                # at a time causing a 40-minute "Nack storm" before any inference starts.
+                if not _fast_forwarded and buf.next_idx_to_release == 0 and event.origin_idx > self._CATCHUP_WINDOW:
+                    skip_to = max(0, event.origin_idx - self._CATCHUP_WINDOW)
+                    logger.info(
+                        f"Fast-forwarding event buffer: skipping to idx {skip_to} "
+                        f"(master is at {event.origin_idx}, avoiding {skip_to}-event replay)"
+                    )
+                    buf.next_idx_to_release = skip_to
+                    _fast_forwarded = True
 
                 buf.ingest(event.origin_idx, event.event)
                 event_id = event.event.event_id
