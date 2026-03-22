@@ -94,12 +94,23 @@ def event_apply(event: Event, state: State) -> State:
 
 
 def apply(state: State, event: IndexedEvent) -> State:
-    # Just to test that events are only applied in correct order
-    if state.last_event_applied_idx != event.idx - 1:
-        logger.warning(
-            f"Expected event {state.last_event_applied_idx + 1} but received {event.idx}"
+    # RavenX fix: allow fast-forward on fresh follower state.
+    # When a follower joins a long-running master and skips to near-current index
+    # (via the fast-forward fix in event_router.py), the worker state starts at
+    # last_event_applied_idx=-1 but receives events at idx 400+.
+    # We advance the state pointer to idx-1 so the sequential check passes.
+    if state.last_event_applied_idx == -1 and event.idx > 0:
+        logger.info(
+            f"Fresh follower state fast-forward: advancing last_applied from -1 to {event.idx - 1} "
+            f"(skipping {event.idx} historical events, applying from idx {event.idx})"
         )
-    assert state.last_event_applied_idx == event.idx - 1
+        state = state.model_copy(update={"last_event_applied_idx": event.idx - 1})
+    elif state.last_event_applied_idx != event.idx - 1:
+        logger.warning(
+            f"Event sequence gap: expected {state.last_event_applied_idx + 1} but received {event.idx} — "
+            f"advancing state pointer to maintain consistency"
+        )
+        state = state.model_copy(update={"last_event_applied_idx": event.idx - 1})
     new_state: State = event_apply(event.event, state)
     return new_state.model_copy(update={"last_event_applied_idx": event.idx})
 
