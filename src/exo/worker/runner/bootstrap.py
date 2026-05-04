@@ -13,6 +13,18 @@ from exo.worker.engines.base import Builder
 logger: "loguru.Logger" = loguru.logger
 
 
+
+def _should_use_tinygrad() -> bool:
+    """Check if we should use tinygrad (NVIDIA GPU on Linux)."""
+    import sys
+    if sys.platform != 'linux':
+        return False
+    try:
+        from tinygrad import Device
+        return Device.DEFAULT in ('NV', 'CUDA', 'GPU')
+    except ImportError:
+        return False
+
 def entrypoint(
     bound_instance: BoundInstance,
     event_sender: MpSender[Event],
@@ -45,6 +57,15 @@ def entrypoint(
 
             builder = MfluxBuilder(
                 event_sender, cancel_receiver, bound_instance.bound_shard
+            )
+        elif _should_use_tinygrad():
+            from exo.worker.engines.tinygrad.builder import TinygradBuilder
+
+            logger.info('Using TinygradBuilder (NVIDIA GPU detected)')
+            builder = TinygradBuilder(
+                model_id=bound_instance.bound_shard.model_card.model_id,
+                event_sender=event_sender,
+                cancel_receiver=cancel_receiver,
             )
         else:
             from exo.worker.engines.mlx.patches import apply_mlx_patches
