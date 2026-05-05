@@ -85,6 +85,36 @@ class Election:
 
     async def run(self):
         logger.info("Starting Election")
+        import sys as _sys
+        if _sys.platform == "linux":
+            logger.info("Starting Election (LINUX PASSIVE MODE)")
+            try:
+                async for msg in self._em_receiver:
+                    logger.info("Linux: accepting peer as Master")
+                    await self.elect(msg)
+            except Exception:
+                pass
+            return
+        import sys as _sys
+        if _sys.platform == "linux":
+            logger.info("Starting Election (LINUX PASSIVE MODE)")
+            try:
+                async for msg in self._em_receiver:
+                    logger.info("Linux: accepting peer as Master")
+                    await self.elect(msg)
+            except Exception:
+                pass
+            return
+        import sys as _sys
+        if _sys.platform == "linux":
+            logger.info("Starting Election (LINUX PASSIVE MODE)")
+            try:
+                async for msg in self._em_receiver:
+                    logger.info("Linux: accepting peer as Master")
+                    await self.elect(msg)
+            except Exception:
+                pass
+            return
         try:
             async with self._tg as tg:
                 tg.start_soon(self._election_receiver)

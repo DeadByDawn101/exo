@@ -2,10 +2,34 @@ from collections.abc import Callable, Generator, Iterator
 from functools import cache
 from typing import Any
 
-from mlx_lm.models.deepseek_v4 import Model as DeepseekV4Model
-from mlx_lm.models.deepseek_v32 import Model as DeepseekV32Model
-from mlx_lm.models.gpt_oss import Model as GptOssModel
-from mlx_lm.tokenizer_utils import TokenizerWrapper
+try:
+    try:
+    from mlx_lm.models.deepseek_v4 import Model as DeepseekV4Model
+except ImportError:
+    DeepseekV4Model = None
+except ImportError:
+    DeepseekV4Model = None
+try:
+    try:
+    from mlx_lm.models.deepseek_v32 import Model as DeepseekV32Model
+except ImportError:
+    DeepseekV32Model = None
+except ImportError:
+    DeepseekV32Model = None
+try:
+    try:
+    from mlx_lm.models.gpt_oss import Model as GptOssModel
+except ImportError:
+    GptOssModel = None
+except ImportError:
+    GptOssModel = None
+try:
+    try:
+    from mlx_lm.tokenizer_utils import TokenizerWrapper
+except ImportError:
+    TokenizerWrapper = None
+except ImportError:
+    TokenizerWrapper = None
 from openai_harmony import (  # pyright: ignore[reportMissingTypeStubs]
     HarmonyEncodingName,
     HarmonyError,  # pyright: ignore[reportUnknownVariableType]
